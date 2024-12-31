@@ -3,6 +3,9 @@ from typing import Dict, Any, List
 import pandas as pd
 import requests
 
+from dotenv import load_dotenv
+import os
+
 import requests
 
 def get_financial_metrics(
@@ -150,3 +153,9 @@ def get_price_data(
 ) -> pd.DataFrame:
     prices = get_prices(ticker, start_date, end_date)
     return prices_to_df(prices)
+
+
+load_dotenv()  # Ensure this is called before trying to fetch the API key
+
+financial_api_key = os.getenv("FINANCIAL_DATASETS_API_KEY")
+

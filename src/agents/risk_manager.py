@@ -10,29 +10,47 @@ import ast
 
 ##### Risk Management Agent #####
 def risk_management_agent(state: AgentState):
-    """Evaluates portfolio risk and sets position limits based on comprehensive risk analysis."""
+    """Evaluates portfolio risk and sets position limits for a specific ticker."""
     show_reasoning = state["metadata"]["show_reasoning"]
     portfolio = state["data"]["portfolio"]
     data = state["data"]
+    ticker = data["ticker"]  # Current ticker being processed
 
     prices_df = prices_to_df(data["prices"])
 
-    # Fetch messages from other agents
-    technical_message = next(msg for msg in state["messages"] if msg.name == "technical_analyst_agent")
-    fundamentals_message = next(msg for msg in state["messages"] if msg.name == "fundamentals_agent")
-    sentiment_message = next(msg for msg in state["messages"] if msg.name == "sentiment_agent")
-    valuation_message = next(msg for msg in state["messages"] if msg.name == "valuation_agent")
+    # Fetch messages from other agents with a default value if not found
+    fundamentals_message = next((msg for msg in state["messages"] if msg.name == "fundamentals_agent"), None)
+    technical_message = next((msg for msg in state["messages"] if msg.name == "technical_analyst_agent"), None)
+    sentiment_message = next((msg for msg in state["messages"] if msg.name == "sentiment_agent"), None)
+    valuation_message = next((msg for msg in state["messages"] if msg.name == "valuation_agent"), None)
+
+    # Handle missing messages by assigning default values
+    fundamental_signals = {}
+    technical_signals = {}
+    sentiment_signals = {}
+    valuation_signals = {}
+
     try:
-        fundamental_signals = json.loads(fundamentals_message.content)
-        technical_signals = json.loads(technical_message.content)
-        sentiment_signals = json.loads(sentiment_message.content)
-        valuation_signals = json.loads(valuation_message.content)
+        if fundamentals_message and fundamentals_message.content.strip():
+            fundamental_signals = json.loads(fundamentals_message.content)
+        if technical_message and technical_message.content.strip():
+            technical_signals = json.loads(technical_message.content)
+        if sentiment_message and sentiment_message.content.strip():
+            sentiment_signals = json.loads(sentiment_message.content)
+        if valuation_message and valuation_message.content.strip():
+            valuation_signals = json.loads(valuation_message.content)
     except Exception as e:
-        fundamental_signals = ast.literal_eval(fundamentals_message.content)
-        technical_signals = ast.literal_eval(technical_message.content)
-        sentiment_signals = ast.literal_eval(sentiment_message.content)
-        valuation_signals = ast.literal_eval(valuation_message.content)
-        
+        # Fall back to `ast.literal_eval` if JSON parsing fails
+        if fundamentals_message and fundamentals_message.content.strip():
+            fundamental_signals = ast.literal_eval(fundamentals_message.content)
+        if technical_message and technical_message.content.strip():
+            technical_signals = ast.literal_eval(technical_message.content)
+        if sentiment_message and sentiment_message.content.strip():
+            sentiment_signals = ast.literal_eval(sentiment_message.content)
+        if valuation_message and valuation_message.content.strip():
+            valuation_signals = ast.literal_eval(valuation_message.content)
+
+    # Combine agent signals
     agent_signals = {
         "fundamental": fundamental_signals,
         "technical": technical_signals,
@@ -40,20 +58,18 @@ def risk_management_agent(state: AgentState):
         "valuation": valuation_signals
     }
 
-    # 1. Calculate Risk Metrics
+    # 1. Calculate Risk Metrics for Current Ticker
     returns = prices_df['close'].pct_change().dropna()
     daily_vol = returns.std()
     volatility = daily_vol * (252 ** 0.5)  # Annualized volatility approximation
-    var_95 = returns.quantile(0.05)         # Simple historical VaR at 95% confidence
+    var_95 = returns.quantile(0.05)         # Historical VaR at 95% confidence
     max_drawdown = (prices_df['close'] / prices_df['close'].cummax() - 1).min()
 
     # 2. Market Risk Assessment
     market_risk_score = 0
-
-    # Volatility scoring
-    if volatility > 0.30:     # High volatility
+    if volatility > 0.30:
         market_risk_score += 2
-    elif volatility > 0.20:   # Moderate volatility
+    elif volatility > 0.20:
         market_risk_score += 1
 
     # VaR scoring
@@ -63,19 +79,31 @@ def risk_management_agent(state: AgentState):
     elif var_95 < -0.02:
         market_risk_score += 1
 
-    # Max Drawdown scoring
-    if max_drawdown < -0.20:  # Severe drawdown
+    if max_drawdown < -0.20:
         market_risk_score += 2
     elif max_drawdown < -0.10:
         market_risk_score += 1
 
-    # 3. Position Size Limits
-    # Consider total portfolio value, not just cash
-    current_stock_value = portfolio['stock'] * prices_df['close'].iloc[-1]
-    total_portfolio_value = portfolio['cash'] + current_stock_value
+    # 3. Position Size Limits for Current Ticker
+   # Ensure positions is a dictionary
+    if not isinstance(portfolio.get("positions"), dict):
+        raise TypeError("Portfolio 'positions' must be a dictionary")
 
-    base_position_size = total_portfolio_value * 0.25  # Start with 25% max position of total portfolio
-    
+    # Safely get the ticker data
+    ticker_data = portfolio["positions"].get(ticker, {})
+
+    if not isinstance(ticker_data, dict):
+        ticker_data = {"shares": 0, "value": 0}  # Fallback to default if ticker_data is not a dictionary
+
+    # Get the number of shares, defaulting to 0 if not present
+    shares = ticker_data.get("shares", 0)
+
+    current_stock_value = shares * prices_df['close'].iloc[-1]
+    total_portfolio_value = portfolio["cash"] + sum(
+        pos["shares"] * pos["value"] for pos in portfolio["positions"].values()
+    )
+
+    base_position_size = total_portfolio_value * 0.25  # 25% max position size
     if market_risk_score >= 4:
         # Reduce position for high risk
         max_position_size = base_position_size * 0.5
@@ -94,44 +122,49 @@ def risk_management_agent(state: AgentState):
     }
 
     stress_test_results = {}
-    current_position_value = current_stock_value
-
-    for scenario, decline in stress_test_scenarios.items():
-        potential_loss = current_position_value * decline
-        portfolio_impact = potential_loss / (portfolio['cash'] + current_position_value) if (portfolio['cash'] + current_position_value) != 0 else math.nan
+    for scenario, decline in {"market_crash": -0.20, "moderate_decline": -0.10, "slight_decline": -0.05}.items():
+        potential_loss = current_stock_value * decline
+        portfolio_impact = potential_loss / total_portfolio_value if total_portfolio_value else 0
         stress_test_results[scenario] = {
             "potential_loss": potential_loss,
             "portfolio_impact": portfolio_impact
         }
 
     # 5. Risk-Adjusted Signals Analysis
-    # Convert all confidences to numeric for proper comparison
-    def parse_confidence(conf_str):
-        return float(conf_str.replace('%', '')) / 100.0
-    low_confidence = any(parse_confidence(signal['confidence']) < 0.30 for signal in agent_signals.values())
+    # Risk-Adjusted Signals Analysis
+    low_confidence = any(
+        float(signal['confidence'].strip('%')) < 30 
+        for signal in agent_signals.values() 
+        if isinstance(signal, dict) and 'confidence' in signal
+    )
 
-    # Check the diversity of signals. If all three differ, add to risk score
-    # (signal divergence can be seen as increased uncertainty)
-    unique_signals = set(signal['signal'] for signal in agent_signals.values())
-    signal_divergence = (2 if len(unique_signals) == 3 else 0)
+    # Extract unique signals, ensuring only valid dictionaries with a 'signal' key are considered
+    unique_signals = set(
+        signal['signal']
+        for signal in agent_signals.values()
+        if isinstance(signal, dict) and 'signal' in signal
+    )
 
-    risk_score = (market_risk_score * 2)  # Market risk contributes up to ~6 points total when doubled
-    if low_confidence:
-        risk_score += 4  # Add penalty if any signal confidence < 30%
-    risk_score += signal_divergence
+    signal_divergence = 2 if len(unique_signals) == 3 else 0
 
-    # Cap risk score at 10
-    risk_score = min(round(risk_score), 10)
-
-    # 6. Generate Trading Action
-    # If risk is very high, hold. If moderately high, consider reducing.
-    # Else, follow valuation signal as a baseline.
-    if risk_score >= 8:
-        trading_action = "hold"
-    elif risk_score >= 6:
+    # Calculate risk score, ensuring low_confidence and signal_divergence are integrated
+    risk_score = min(
+        round(market_risk_score * 2 + (4 if low_confidence else 0) + signal_divergence),
+        10
+    )
+    # Generate Trading Action
+    if risk_score < 6:
+        # Low risk encourages buying
+        trading_action = "buy"
+    elif 6 <= risk_score < 8:
+        # Moderate risk encourages reducing exposure
         trading_action = "reduce"
+    elif risk_score >= 8:
+        # High risk discourages taking action
+        trading_action = "hold"
     else:
-        trading_action = agent_signals['valuation']['signal']
+        # Indecisive outcome
+        trading_action = "indecisive"
 
     message_content = {
         "max_position_size": float(max_position_size),
@@ -144,16 +177,10 @@ def risk_management_agent(state: AgentState):
             "market_risk_score": market_risk_score,
             "stress_test_results": stress_test_results
         },
-        "reasoning": f"Risk Score {risk_score}/10: Market Risk={market_risk_score}, "
-                     f"Volatility={volatility:.2%}, VaR={var_95:.2%}, "
-                     f"Max Drawdown={max_drawdown:.2%}"
+        "reasoning": f"Risk Score {risk_score}/10: Trading action '{trading_action}' selected based on risk level."
     }
 
-    # Create the risk management message
-    message = HumanMessage(
-        content=json.dumps(message_content),
-        name="risk_management_agent",
-    )
+    message = HumanMessage(content=json.dumps(message_content), name="risk_management_agent")
 
     if show_reasoning:
         show_agent_reasoning(message_content, "Risk Management Agent")
