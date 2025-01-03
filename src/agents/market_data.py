@@ -3,6 +3,7 @@ from langchain_openai.chat_models import ChatOpenAI
 
 from agents.state import AgentState
 from tools.api import search_line_items, get_financial_metrics, get_insider_trades, get_market_cap, get_prices
+from dateutil.relativedelta import relativedelta
 
 from datetime import datetime
 
@@ -33,9 +34,8 @@ def market_data_agent(state: AgentState):
     if not data["start_date"]:
         # Calculate 3 months before end_date
         end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
-        start_date = end_date_obj.replace(month=end_date_obj.month - 3) if end_date_obj.month > 3 else \
-            end_date_obj.replace(year=end_date_obj.year - 1, month=end_date_obj.month + 9)
-        start_date = start_date.strftime('%Y-%m-%d')
+        start_date_obj = end_date_obj - relativedelta(months=3)  # Subtract 3 months safely
+        start_date = start_date_obj.strftime('%Y-%m-%d')
     else:
         start_date = data["start_date"]
 

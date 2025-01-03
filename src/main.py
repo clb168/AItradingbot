@@ -103,10 +103,10 @@ if __name__ == "__main__":
             start_date=args.start_date,
             end_date=args.end_date,
             portfolio=portfolio,
-            show_reasoning=args.show_reasoning,
+            show_reasoning=args.show_reasoning
         )
         print(f"Result for {ticker}:")
         print(result)
 
-    print("\nFinal Portfolio:")
-    print(portfolio)
+        print("\nFinal Portfolio:")
+        print(portfolio)

@@ -56,6 +56,27 @@ def portfolio_management_agent(state: AgentState):
             valuation_signals = json.loads(valuation_message.content)
         if risk_message and risk_message.content.strip():
             risk_signals = json.loads(risk_message.content)
+
+            # Extract risk management constraints
+            max_position_size = risk_signals.get("max_position_size", 0)
+            trading_action = risk_signals.get("trading_action", "hold")
+
+            # Calculate feasible quantity based on risk constraints
+            prices_df = prices_to_df(state["data"]["prices"])
+            current_price = prices_df["close"].iloc[-1]
+            ticker = state["data"]["ticker"]
+
+            # Ensure the ticker exists in the portfolio
+            current_position = portfolio["positions"].get(ticker, {})
+            shares_owned = current_position.get("shares", 0)
+
+            if trading_action == "buy":
+                feasible_quantity = min(int(max_position_size / current_price), int(portfolio["cash"] / current_price))
+            elif trading_action == "sell":
+                feasible_quantity = min(int(max_position_size / current_price), shares_owned)
+            else:
+                feasible_quantity = 0  # Default for "hold"
+
     except Exception as e:
         # Handle fallback parsing with `ast.literal_eval` in case of JSON errors
         if technical_message and technical_message.content.strip():
@@ -68,6 +89,12 @@ def portfolio_management_agent(state: AgentState):
             valuation_signals = ast.literal_eval(valuation_message.content)
         if risk_message and risk_message.content.strip():
             risk_signals = ast.literal_eval(risk_message.content)
+
+            # Extract risk management constraints in fallback
+            max_position_size = risk_signals.get("max_position_size", 0)
+            trading_action = risk_signals.get("trading_action", "hold")
+            feasible_quantity = 0  # Default in fallback scenario
+
 
     # Combine signals into agent signals dictionary for further processing if needed
     agent_signals = {
@@ -88,61 +115,60 @@ def portfolio_management_agent(state: AgentState):
         [
             (
                 "system",
-                """You are a portfolio manager making final trading decisions.
-                Your job is to make a trading decision based on the team's analysis while strictly adhering
-                to risk management constraints.
+                """You are a portfolio manager making final trading decisions. Your job is to make a trading decision based on the team's analysis while adhering to risk management constraints, with these guidelines:
 
-                RISK MANAGEMENT CONSTRAINTS:
-                - You MUST NOT exceed the max_position_size specified by the risk manager
-                - You MUST follow the trading_action (buy/sell/hold) recommended by risk management
-                - These are hard constraints that cannot be overridden by other signals
+                    ### RISK MANAGEMENT CONSTRAINTS:
+                    - You MUST NOT exceed the max_position_size specified by the risk manager.
+                    - If the risk manager specifies a desired_position_size, aim to achieve that position, even if other signals recommend "hold." This applies as long as you have enough cash (for buys) or enough shares (for sells).
+                    - If no explicit desired_position_size is provided, follow the trading_action (buy/sell/hold) recommended by the risk manager.
 
-                When weighing the different signals for direction and timing:
-                1. Valuation Analysis (35% weight)
-                   - Primary driver of fair value assessment
-                   - Determines if price offers good entry/exit point
-                
-                2. Fundamental Analysis (30% weight)
-                   - Business quality and growth assessment
-                   - Determines conviction in long-term potential
-                
-                3. Technical Analysis (25% weight)
-                   - Secondary confirmation
-                   - Helps with entry/exit timing
-                
-                4. Sentiment Analysis (10% weight)
-                   - Final consideration
-                   - Can influence sizing within risk limits
+                    ### WEIGHING THE SIGNALS:
+                    When weighing signals for direction and timing:
+                    1. Valuation Analysis (35% weight)
+                    - Primary driver for fair value assessment.
+                    - Determines if the price offers a good entry/exit point.
 
-                If a signal or signals is or are missing:
-                - Reduce its or their weight proportionally and adjust the other weights.
-                - Use any indirect clues from other signals to hypothesize plausible market scenarios.
-                - Generate potential connections or extrapolations based on available data to fill gaps.
+                    2. Fundamental Analysis (30% weight)
+                    - Business quality and growth assessment.
+                    - Determines conviction in long-term potential.
 
-                Incorporate hypothetical or unconventional ideas if:
-                - They align with broader market trends or historical patterns.
-                - They remain within the constraints provided by risk management.
+                    3. Technical Analysis (25% weight)
+                    - Secondary confirmation.
+                    - Helps with entry/exit timing.
 
-                The decision process should be:
-                1. First check risk management constraints
-                2. Then evaluate valuation signal
-                3. Then evaluate fundamentals signal
-                4. Use technical analysis for timing
-                5. Consider sentiment for final adjustment
-                
-                Provide the following in your output:
-                - "action": "buy" | "sell" | "hold",
-                - "quantity": <positive integer>
-                - "confidence": <float between 0 and 1>
-                - "agent_signals": <list of agent signals including agent name, signal (bullish | bearish | neutral), and their confidence>
-                - "reasoning": <concise explanation of the decision including how you weighted the signals>
+                    4. Sentiment Analysis (10% weight)
+                    - Final consideration.
+                    - Can influence sizing within risk limits.
 
-                Trading Rules:
-                - Never exceed risk management position limits
-                - Only buy if you have available cash
-                - Only sell if you have shares to sell
-                - Quantity must be ≤ current position for sells
-                - Quantity must be ≤ max_position_size from risk management"""
+                    ### HANDLING MISSING SIGNALS:
+                    If one or more signals are missing:
+                    - Adjust weights proportionally among the remaining signals.
+                    - Use indirect clues or data from other signals to hypothesize plausible market scenarios.
+                    - Incorporate hypothetical or unconventional ideas if they align with market trends or historical patterns.
+
+                    ### DECISION-MAKING PRIORITIES:
+                    1. **Risk Management First**: Ensure compliance with max_position_size and desired_position_size.
+                    2. Evaluate the remaining signals, adjusted for weight changes due to missing data.
+                    3. Use technical analysis for timing and sentiment for final adjustments.
+                    4. Hypothesize potential market scenarios based on available signals and trends to fill gaps in analysis.
+
+                    ### OUTPUT FORMAT:
+                    Provide your output strictly in the following JSON format:
+                    - "action": "buy" | "sell" | "hold",
+                    - "quantity": <positive integer>,
+                    - "confidence": <float between 0 and 1>,
+                    - "agent_signals": <list of agent signals including agent name, signal (bullish | bearish | neutral), and their confidence>,
+                    - "reasoning": <concise explanation of the decision, including how you weighted the signals, handled missing data, and aligned with risk manager constraints>.
+
+                    ### TRADING RULES:
+                    - Never exceed risk manager’s max_position_size.
+                    - Aim to achieve the desired_position_size set by the risk manager if cash/shares allow.
+                    - Only buy if you have available cash.
+                    - Only sell if you have shares in the portfolio to sell.
+                    - Quantity for sells must be ≤ current position.
+                    - Quantity for buys must be ≤ available cash and max_position_size.
+                    - For missing signals, hypothesize plausible scenarios to guide decisions within the given constraints.
+                    """
             ),
             (
                 "human",

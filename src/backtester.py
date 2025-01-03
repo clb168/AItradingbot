@@ -6,6 +6,8 @@ import pandas as pd
 from main import run_hedge_fund
 from tools.api import get_price_data
 import seaborn as sns  # For better aesthetics
+import json
+import re
 
 class Backtester:
     def __init__(self, agent, tickers, start_date, end_date, initial_capital):
@@ -23,59 +25,81 @@ class Backtester:
 
     def parse_action(self, agent_output):
         try:
-            # Expect JSON output from agent
-            import json
-            decision = json.loads(agent_output)
-            return decision["action"], decision["quantity"]
-        except:
-            print(f"Error parsing action: {agent_output}")
-            return "hold", 0
+            
+            # Normalize the raw output by replacing percentages with decimal equivalents
+            normalized_output = re.sub(r'(\d+)%', lambda m: str(float(m.group(1)) / 100), agent_output)
 
-    def execute_trade(self, ticker, action, quantity, current_price):
+            # Parse the normalized JSON
+            decision = json.loads(normalized_output)
+
+            # Extract the action and quantity with default fallbacks
+            action = decision.get("action", "hold")  # Default to "hold" if "action" is missing
+            quantity = decision.get("quantity", 0)  # Default to 0 if "quantity" is missing
+            
+            # Ensure the quantity is an integer
+            if isinstance(quantity, str) and quantity.isdigit():
+                quantity = int(quantity)
+            elif not isinstance(quantity, int):
+                raise ValueError(f"Invalid quantity format: {quantity}")
+
+            return action, quantity
+
+        except json.JSONDecodeError as e:
+            print(f"JSONDecodeError: {e.msg}. Agent output: {agent_output}")
+        except ValueError as e:
+            print(f"ValueError: {str(e)}. Agent output: {agent_output}")
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}. Agent output: {agent_output}")
+
+        # Default fallback if parsing fails
+        return "hold", 0
+
+
+
+
+
+    def execute_trade(self, ticker, action, quantity, current_price, current_date):
         """Validate and execute trades for the specific ticker."""
-        executed_quantity = 0
+        executed_quantity = 0  # Track how many shares were actually traded
 
+        # Handle buy action
         if action == "buy" and quantity > 0:
             cost = quantity * current_price
-            if cost <= self.portfolio["cash"]:
+            if cost <= self.portfolio["cash"]:  # Check if sufficient cash exists
                 executed_quantity = quantity
                 self.portfolio["positions"][ticker]["shares"] += executed_quantity
                 self.portfolio["cash"] -= cost
-                print(f"Buy executed: {executed_quantity} shares of {ticker} at {current_price}")
             else:
+                # If not enough cash, calculate maximum affordable quantity
                 max_quantity = int(self.portfolio["cash"] // current_price)
                 if max_quantity > 0:
                     executed_quantity = max_quantity
                     self.portfolio["positions"][ticker]["shares"] += executed_quantity
                     self.portfolio["cash"] -= executed_quantity * current_price
-                    print(f"Buy partial: {executed_quantity} shares of {ticker} at {current_price}")
 
+        # Handle sell action
         elif action == "sell" and quantity > 0:
             available_shares = self.portfolio["positions"][ticker]["shares"]
-            executed_quantity = min(quantity, available_shares)
+            executed_quantity = min(quantity, available_shares)  # Sell only available shares
             if executed_quantity > 0:
                 self.portfolio["positions"][ticker]["shares"] -= executed_quantity
                 self.portfolio["cash"] += executed_quantity * current_price
-                print(f"Sell executed: {executed_quantity} shares of {ticker} at {current_price}")
 
+        # Log the trade if any shares were bought/sold
         if executed_quantity > 0:
             self.trades.append({
-                "Date": datetime.now(),
+                "Date": current_date.strftime("%Y-%m-%d"),  # Record the current date
                 "Ticker": ticker,
                 "Action": action,
                 "Quantity": executed_quantity,
                 "Price": current_price,
             })
-            print(f"Trade logged: {self.trades[-1]}")
 
         return executed_quantity
 
 
-
-
     def run_backtest(self):
         dates = pd.date_range(self.start_date, self.end_date, freq="B").to_pydatetime()
-
 
         print("\nStarting backtest...")
 
@@ -94,18 +118,22 @@ class Backtester:
                     portfolio=self.portfolio
                 )
 
+                print(f"Raw agent output: {agent_output}")  # Debugging
+
                 action, quantity = self.parse_action(agent_output)
+                # print(f"Parsed action: {action}, quantity: {quantity}")  # Debugging
+
                 df = get_price_data(ticker, lookback_start, current_date_str)
                 current_price = df.iloc[-1]['close']
 
-                # Execute the trade with validation
-                executed_quantity = self.execute_trade(ticker, action, quantity, current_price)
-                
+                # Execute the trade with validation, passing the current_date
+                executed_quantity = self.execute_trade(ticker, action, quantity, current_price, current_date)
+
                 total_value = self.portfolio["cash"] + sum(
                     self.portfolio["positions"][t]["shares"] * df.iloc[-1]["close"] for t in self.tickers
                 )
 
-                 # Save the total portfolio value
+                # Save the total portfolio value
                 self.portfolio["portfolio_value"] = total_value
 
                 # Log the current state with executed quantity
@@ -118,6 +146,7 @@ class Backtester:
             self.portfolio_values.append(
                 {"Date": current_date, "Portfolio Value": self.portfolio["portfolio_value"]}
             )
+
 
     def analyze_performance(self):
         sns.set_theme(style="whitegrid")
@@ -170,6 +199,7 @@ class Backtester:
         # Add Buy/Sell Annotations
         for trade in self.trades:
             date = trade["Date"]
+            print (date)
             action = trade["Action"]
             price = trade["Price"]
             quantity = trade["Quantity"]

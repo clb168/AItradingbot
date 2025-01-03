@@ -166,10 +166,14 @@ def risk_management_agent(state: AgentState):
         # Indecisive outcome
         trading_action = "indecisive"
 
+    current_price = prices_df['close'].iloc[-1]
+    suggested_quantity = int(max_position_size / current_price)
+
     message_content = {
         "max_position_size": float(max_position_size),
         "risk_score": risk_score,
         "trading_action": trading_action,
+        "suggested_quantity": suggested_quantity,
         "risk_metrics": {
             "volatility": float(volatility),
             "value_at_risk_95": float(var_95),
