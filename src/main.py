@@ -170,8 +170,6 @@ if __name__ == "__main__":
         status = "Enabled" if is_enabled else "Disabled"
         print(f"  - {agent}: {status}")
 
-    print("\nRunning backtest...\n")
-
     # Process each ticker
     for ticker in tickers:
         print(f"\nProcessing {ticker}...")
