@@ -71,6 +71,11 @@ export FINANCIAL_DATASETS_API_KEY='your-api-key-here' # Get a key from https://f
 ```bash
 poetry run python src/main.py --ticker AAPL
 ```
+For multiple tickers, separate with a comma.
+
+```bash
+poetry run python src/main.py --ticker AAPL,TSLA
+```
 
 You can also specify a `--show-reasoning` flag to print the reasoning of each agent to the console.
 

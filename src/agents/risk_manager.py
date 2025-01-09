@@ -17,6 +17,7 @@ def risk_management_agent(state: AgentState):
     ticker = data["ticker"]  # Current ticker being processed
 
     prices_df = prices_to_df(data["prices"])
+    current_price = prices_df['close'].iloc[-1]  # Get the latest closing price
 
     # Fetch messages from other agents with a default value if not found
     fundamentals_message = next((msg for msg in state["messages"] if msg.name == "fundamentals_agent"), None)

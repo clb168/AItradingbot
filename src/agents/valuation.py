@@ -3,7 +3,13 @@ from agents.state import AgentState, show_agent_reasoning
 import json
 
 def valuation_agent(state: AgentState):
-    """Performs detailed valuation analysis using multiple methodologies."""
+    """
+    Performs detailed valuation analysis using multiple methodologies:
+    1. Owner Earnings Valuation (Buffett Method)
+    2. DCF Valuation
+
+    The agent generates a bullish or bearish signal based on the combined valuation gap from both methods.
+    """
     show_reasoning = state["metadata"]["show_reasoning"]
     data = state["data"]
     metrics = data["financial_metrics"][0]
@@ -15,7 +21,7 @@ def valuation_agent(state: AgentState):
 
     # Calculate working capital change
     working_capital_change = current_financial_line_item.get('working_capital', 0) - previous_financial_line_item.get('working_capital', 0)
-    
+
     # Owner Earnings Valuation (Buffett Method)
     owner_earnings_value = calculate_owner_earnings_value(
         net_income=current_financial_line_item.get('net_income'),
@@ -26,7 +32,7 @@ def valuation_agent(state: AgentState):
         required_return=0.15,
         margin_of_safety=0.25
     )
-    
+
     # DCF Valuation
     dcf_value = calculate_intrinsic_value(
         free_cash_flow=current_financial_line_item.get('free_cash_flow'),
@@ -35,7 +41,7 @@ def valuation_agent(state: AgentState):
         terminal_growth_rate=0.03,
         num_years=5,
     )
-    
+
     # Calculate combined valuation gap (average of both methods)
     dcf_gap = (dcf_value - market_cap) / market_cap
     owner_earnings_gap = (owner_earnings_value - market_cap) / market_cap

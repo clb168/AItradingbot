@@ -273,25 +273,84 @@ class Backtester:
 if __name__ == "__main__":
     import argparse
 
-    # Set up argument parser
-    parser = argparse.ArgumentParser(description="Run backtesting simulation")
-    parser.add_argument("--tickers", type=str, help="Comma-separated list of stock tickers (e.g., AAPL,TSLA)")
-    parser.add_argument("--end-date", type=str, default=datetime.now().strftime("%Y-%m-%d"), help="End date in YYYY-MM-DD format")
-    parser.add_argument("--start-date", type=str, default=(datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d"), help="Start date in YYYY-MM-DD format")
-    parser.add_argument("--initial_capital", type=float, default=100000, help="Initial capital amount (default: 100000)")
+    # Default agent configuration
+    AGENT_CONFIG = {
+        "market_data_agent": True,
+        "technical_analyst_agent": True,
+        "fundamentals_agent": False,
+        "sentiment_agent": False,
+        "risk_management_agent": True,
+        "portfolio_management_agent": True,
+        "valuation_agent": False,
+    }
 
-    args = parser.parse_args()
+    print("\nWelcome to the Backtesting Simulation!")
+
+    # Show default agent configuration
+    print("\nDefault Agent Configuration:")
+    for agent, is_enabled in AGENT_CONFIG.items():
+        status = "Enabled" if is_enabled else "Disabled"
+        print(f"  - {agent}: {status}")
+
+    print("\nYou can enable or disable agents in the next steps.")
+
+    # Suggest default values for user input
+    default_tickers = "AAPL,GOOG"
+    default_start_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+    default_end_date = datetime.now().strftime('%Y-%m-%d')
+    default_initial_capital = 100000.0
+
+    # Collect inputs interactively
+    tickers = input(f"\nEnter stock tickers (comma-separated) [Default: {default_tickers}]: ") or default_tickers
+    start_date = input(f"Enter start date (YYYY-MM-DD) [Default: {default_start_date}]: ") or default_start_date
+    end_date = input(f"Enter end date (YYYY-MM-DD) [Default: {default_end_date}]: ") or default_end_date
+    initial_capital = input(f"Enter initial capital amount [Default: {default_initial_capital}]: ") or default_initial_capital
+
+    # Enable/disable agents interactively
+    print("\nEnter agents to enable or disable (comma-separated, leave empty to keep defaults):")
+    enable_agents = input("Agents to enable: ")
+    disable_agents = input("Agents to disable: ")
+
+    # Validate dates
+    try:
+        datetime.strptime(start_date, '%Y-%m-%d')
+        datetime.strptime(end_date, '%Y-%m-%d')
+    except ValueError:
+        raise ValueError("Dates must be in YYYY-MM-DD format")
 
     # Parse the tickers
-    tickers = args.tickers.split(",")
+    tickers = tickers.split(",")
+
+    # Update AGENT_CONFIG based on interactive input
+    if enable_agents:
+        for agent in enable_agents.split(","):
+            if agent in AGENT_CONFIG:
+                AGENT_CONFIG[agent] = True
+            else:
+                print(f"Warning: {agent} is not a recognized agent name.")
+
+    if disable_agents:
+        for agent in disable_agents.split(","):
+            if agent in AGENT_CONFIG:
+                AGENT_CONFIG[agent] = False
+            else:
+                print(f"Warning: {agent} is not a recognized agent name.")
+
+    # Display the final configuration
+    print("\nUpdated Agent Configuration:")
+    for agent, is_enabled in AGENT_CONFIG.items():
+        status = "Enabled" if is_enabled else "Disabled"
+        print(f"  - {agent}: {status}")
+
+    print("\nRunning backtest...\n")
 
     # Create an instance of Backtester
     backtester = Backtester(
-        agent=run_hedge_fund,
+        agent=lambda *args, **kwargs: run_hedge_fund(*args, agent_config=AGENT_CONFIG, **kwargs),
         tickers=tickers,
-        start_date=args.start_date,
-        end_date=args.end_date,
-        initial_capital=args.initial_capital,
+        start_date=start_date,
+        end_date=end_date,
+        initial_capital=float(initial_capital),
     )
 
     # Run the backtesting process
