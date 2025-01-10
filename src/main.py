@@ -17,15 +17,15 @@ from datetime import datetime, timedelta
 AGENT_CONFIG = {
     "market_data_agent": True,
     "technical_analyst_agent": True,
-    "fundamentals_agent": False,
+    "fundamentals_agent": True,
     "sentiment_agent": False,
     "risk_management_agent": True,
     "portfolio_management_agent": True,
-    "valuation_agent": False,
+    "valuation_agent": True,
 }
 
 ##### Run the Hedge Fund #####
-def run_hedge_fund(ticker: str, start_date: str, end_date: str, portfolio: dict, agent_config: dict, show_reasoning: bool = False):
+def run_hedge_fund(ticker: str, start_date: str, end_date: str, portfolio: dict, agent_config: dict, show_reasoning: bool = False) -> str:
     """
     Runs the hedge fund workflow and returns the final trading decision.
 
@@ -55,9 +55,10 @@ def run_hedge_fund(ticker: str, start_date: str, end_date: str, portfolio: dict,
     # Add nodes dynamically based on the configuration
     for agent, is_enabled in agent_config.items():
         if is_enabled:
+            # Add the agent to the workflow
             workflow.add_node(agent, globals()[agent])
 
-    # Set the entry point
+    # Set the entry point of the workflow
     if agent_config.get("market_data_agent"):
         workflow.set_entry_point("market_data_agent")
 
@@ -66,20 +67,24 @@ def run_hedge_fund(ticker: str, start_date: str, end_date: str, portfolio: dict,
         # Market data agent sends data to all analysis agents
         for analysis_agent in ["technical_analyst_agent", "fundamentals_agent", "sentiment_agent", "valuation_agent"]:
             if agent_config.get(analysis_agent):
+                # Add an edge from the market data agent to the analysis agent
                 workflow.add_edge("market_data_agent", analysis_agent)
 
     # All analysis agents send their results to the risk management agent
     if agent_config.get("risk_management_agent"):
         for analysis_agent in ["technical_analyst_agent", "fundamentals_agent", "sentiment_agent", "valuation_agent"]:
             if agent_config.get(analysis_agent):
+                # Add an edge from the analysis agent to the risk management agent
                 workflow.add_edge(analysis_agent, "risk_management_agent")
 
     # Risk management agent sends its analysis to the portfolio management agent
     if agent_config.get("portfolio_management_agent"):
+        # Add an edge from the risk management agent to the portfolio management agent
         workflow.add_edge("risk_management_agent", "portfolio_management_agent")
 
     # End with the portfolio management agent
     if agent_config.get("portfolio_management_agent"):
+        # Add an edge from the portfolio management agent to the end node
         workflow.add_edge("portfolio_management_agent", END)
 
     # Compile and run the workflow
@@ -102,6 +107,7 @@ def run_hedge_fund(ticker: str, start_date: str, end_date: str, portfolio: dict,
             }
         },
     )
+    # Return the final trading decision
     return final_state["messages"][-1].content
 
 if __name__ == "__main__":
@@ -169,8 +175,6 @@ if __name__ == "__main__":
     for agent, is_enabled in AGENT_CONFIG.items():
         status = "Enabled" if is_enabled else "Disabled"
         print(f"  - {agent}: {status}")
-
-    print("\nRunning backtest...\n")
 
     # Process each ticker
     for ticker in tickers:

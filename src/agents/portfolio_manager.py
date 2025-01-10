@@ -147,27 +147,18 @@ def portfolio_management_agent(state: AgentState):
                     - Incorporate hypothetical or unconventional ideas if they align with market trends or historical patterns.
 
                     ### DECISION-MAKING PRIORITIES:
-                    1. **Risk Management First**: Ensure compliance with max_position_size and desired_position_size.
+                    1. Align with Risk Management but don't be bound by it: Ensure compliance with max_position_size and desired_position_size.
                     2. Evaluate the remaining signals, adjusted for weight changes due to missing data.
                     3. Use technical analysis for timing and sentiment for final adjustments.
                     4. Hypothesize potential market scenarios based on available signals and trends to fill gaps in analysis.
 
                     ### OUTPUT FORMAT:
                     Provide your output strictly in the following JSON format:
-                    {
-                    "action": "buy" | "sell" | "hold",
-                    "quantity": <positive integer>,
-                    "confidence": <float between 0 and 1>,
-                    "agent_signals": [
-                        {"agent": <string>, "signal": "bullish" | "bearish" | "neutral", "confidence": <float>}
-                    ],
-                    "reasoning": <concise explanation of the decision, including how you weighted the signals, handled missing data, and aligned with risk manager constraints>
-                    }
-
-                    IMPORTANT: 
-                    - Do not include additional text or formatting like "```json".
-                    - Only include the pure JSON object in your output.
-                    - Any deviation from this structure will result in rejection of the output.
+                    - "action": "buy" | "sell" | "hold",
+                    - "quantity": <positive integer>,
+                    - "confidence": <float between 0 and 1>,
+                    - "agent_signals": <list of agent signals including agent name, signal (bullish | bearish | neutral), and their confidence>,
+                    - "reasoning": <concise explanation of the decision, including how you weighted the signals, handled missing data, and aligned with risk manager constraints>.
 
                     ### TRADING RULES:
                     - Never exceed risk manager’s max_position_size.
